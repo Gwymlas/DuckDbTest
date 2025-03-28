@@ -18,8 +18,7 @@ internal class Program
         var postgresConnectionStringForDuckDb =
             $"host={host} port={port} dbname={dbname} user={user} password={password}";
         var postgresConnectionString = $"Host={host};Port={port};Database={dbname};Username={user};Password={password}";
-
-        // Создание тестовой таблицы в PostgreSQL
+        
         CreatePostgresTable(postgresConnectionString);
 
         using var duckDbConnection = new DuckDBConnection("Data Source=duck.db");
@@ -32,10 +31,11 @@ internal class Program
         command.ExecuteNonQuery();
         
         //Включение пространственного расширения
-        command.CommandText = "INSTALL spatial; LOAD spatial;";
+        command.CommandText = "INSTALL spatial; LOAD spatial";
         command.ExecuteNonQuery();
         
-        TransferDataToDuckDb(duckDbConnection);
+        // TransferDataToDuckDbUsingSelect(duckDbConnection);
+        TransferDataToDuckDbUsingCopy(duckDbConnection);
         
         PrintDataToConsole(duckDbConnection);
         
@@ -49,10 +49,9 @@ internal class Program
         using var postgresConnection = new NpgsqlConnection(connectionString);
         postgresConnection.Open();
 
-        using var command = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS postgis", postgresConnection);
+        using var command = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS postgis;", postgresConnection);
         command.ExecuteNonQuery();
         
-        // Создание тестовой таблицы
         command.CommandText = @"
             CREATE TABLE IF NOT EXISTS geom_test (
                 id SERIAL PRIMARY KEY,
@@ -77,23 +76,32 @@ internal class Program
                                   50.1756065193764 53.21402291744005, 
                                   50.17541970055876 53.21416021499951))', 4326))";
         command.ExecuteNonQuery();
-    
-        // (ST_SetSRID(ST_MakePoint(20.51206169768136, 54.70643639899387), 4326))
+        
         Console.WriteLine("Тестовая таблица создана в PostgreSQL");
         postgresConnection.Close();
     }
 
-    private static void TransferDataToDuckDb(DuckDBConnection duckDbConnection)
+    private static void TransferDataToDuckDbUsingSelect(DuckDBConnection duckDbConnection)
     {
         using var command = duckDbConnection.CreateCommand();
         
         command.CommandText = "DROP TABLE IF EXISTS duckdb_geom";
         command.ExecuteNonQuery();
         
-        // Создание таблицы в DuckDB и вставка данных
         command.CommandText = @"
             CREATE TABLE duckdb_geom AS
             SELECT id, ST_GeomFromWKB(geom) as geom FROM postgres_db.geom_test";
+        command.ExecuteNonQuery();
+    }
+    
+    private static void TransferDataToDuckDbUsingCopy(DuckDBConnection duckDbConnection)
+    {
+        using var command = duckDbConnection.CreateCommand();
+        
+        command.CommandText = "COPY (SELECT * FROM postgres_db.geom_test) TO 'data.parquet';";
+        command.ExecuteNonQuery();
+        
+        command.CommandText = "CREATE TABLE duckdb_geom AS SELECT * FROM 'data.parquet';";
         command.ExecuteNonQuery();
     }
 
