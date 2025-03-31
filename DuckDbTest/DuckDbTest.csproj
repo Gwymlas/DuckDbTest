@@ -11,6 +11,10 @@
     <ItemGroup>
         <PackageReference Include="DuckDB.NET.Data.Full" Version="1.2.1"/>
         <PackageReference Include="NetTopologySuite" Version="2.6.0"/>
+        <PackageReference Include="NetTopologySuite.IO.GeoPackage" Version="2.0.0" />
+        <PackageReference Include="NetTopologySuite.IO.PostGis" Version="2.1.0" />
+        <PackageReference Include="NetTopologySuite.IO.SpatiaLite" Version="2.0.0" />
+        <PackageReference Include="NetTopologySuite.IO.TinyWKB" Version="2.0.2" />
         <PackageReference Include="Npgsql" Version="9.0.3"/>
     </ItemGroup>
 
