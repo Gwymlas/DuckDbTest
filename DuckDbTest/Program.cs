@@ -7,46 +7,6 @@ namespace DuckDbTest;
 
 internal class Program
 {
-    private static void TransferDataToDuckDbUsingSelect(DuckDBConnection duckDbConnection)
-    {
-        using var command = duckDbConnection.CreateCommand();
-        
-        command.CommandText = "DROP TABLE IF EXISTS duckdb_geom";
-        command.ExecuteNonQuery();
-        
-        command.CommandText = @"
-            CREATE TABLE duckdb_geom AS
-            SELECT id, ST_GeomFromWKB(geom) as geom FROM postgres_db.geom_test";
-        command.ExecuteNonQuery();
-    }
-    
-    private static void TestNtsForDuckDbDataAsWkb(DuckDBConnection duckDbConnection)
-    {
-        using var command = duckDbConnection.CreateCommand();
-
-        command.CommandText = "SELECT id, ST_AsWKB(geom) as geom_wkb FROM duckdb_geom";
-
-        var wkbReader = new WKBReader();
-        var geometries = new List<Geometry>();
-
-        Console.WriteLine("\nРабота с геометрией через NTS:");
-        using var duckDbReader = command.ExecuteReader();
-        while (duckDbReader.Read())
-        {
-            var wkbBytes = duckDbReader.GetStream(1);
-            var geometry = wkbReader.Read(wkbBytes);
-            geometries.Add(geometry);
-            
-            Console.WriteLine($"Тип геометрии: {geometry.GeometryType}, Площадь: {geometry.Area}");
-        }
-        
-        var distance = geometries[0].Distance(geometries[1]);
-        Console.WriteLine($"Расстояние между первым и вторым элементами: {distance}");
-        
-        var crosses = geometries[0].Crosses(geometries[1]);
-        Console.WriteLine($"Пересекает ли: {(crosses? "Да" : "Нет")}");
-    }
-    
     private static void Main()
     {
         const string host = "localhost";
@@ -55,7 +15,7 @@ internal class Program
         const string user = "postgres";
         const string password = "123";
 
-        const string duckDbFile = "duck_wkb.db";
+        const string duckDbFile = "duck_geom.db";
 
         var postgresConnectionStringForDuckDb =
             $"host={host} port={port} dbname={dbname} user={user} password={password}";
@@ -78,8 +38,6 @@ internal class Program
         
         // TransferDataToDuckDbUsingSelect(duckDbConnection);
         TransferDataToDuckDbUsingCopy(duckDbConnection);
-        
-        // PrintDataToConsole(duckDbConnection);
         
         TestNtsForDuckDbData(duckDbConnection);
         
@@ -123,6 +81,19 @@ internal class Program
         postgresConnection.Close();
     }
     
+    private static void TransferDataToDuckDbUsingSelect(DuckDBConnection duckDbConnection)
+    {
+        using var command = duckDbConnection.CreateCommand();
+        
+        command.CommandText = "DROP TABLE IF EXISTS duckdb_geom";
+        command.ExecuteNonQuery();
+        
+        command.CommandText = @"
+            CREATE TABLE duckdb_geom AS
+            SELECT id, ST_GeomFromWKB(geom) as geom FROM postgres_db.geom_test";
+        command.ExecuteNonQuery();
+    }
+    
     private static void TransferDataToDuckDbUsingCopy(DuckDBConnection duckDbConnection)
     {
         using var command = duckDbConnection.CreateCommand();
@@ -132,18 +103,8 @@ internal class Program
         
         command.CommandText = @"CREATE OR REPLACE TABLE duckdb_geom AS 
             SELECT id, ST_AsWKB(geom) as geom FROM 'data.parquet';";
-        command.ExecuteNonQuery();
-    }
-
-    private static void PrintDataToConsole(DuckDBConnection duckDbConnection)
-    {
-        using var command = duckDbConnection.CreateCommand();
         
-        command.CommandText = "SELECT id, ST_AsText(geom) as geom FROM duckdb_geom";
-        using var duckDbReader = command.ExecuteReader();
-        Console.WriteLine("\nДанные в DuckDB:");
-        while (duckDbReader.Read())
-            Console.WriteLine($"ID: {duckDbReader.GetInt32(0)}, Geometry: {duckDbReader.GetString(1)}");
+        command.ExecuteNonQuery();
     }
     
     private static void TestNtsForDuckDbData(DuckDBConnection duckDbConnection)
@@ -154,38 +115,38 @@ internal class Program
         // command.CommandText = "SELECT geom FROM postgres_db.geom_test";
 
         using var duckDbReader = command.ExecuteReader();
-        var wkbReader = new WKBReader();
         
         var postGisReader = new PostGisReader();
-        // var geoPackageGeoReader = new GeoPackageGeoReader();
-        // var tinyWkbReader = new TinyWkbReader();
-        // var gaiaGeoReader = new GaiaGeoReader();
-
+        var geometries = new List<Geometry>();
+        
         while (duckDbReader.Read())
         {
             var duckDbStream = duckDbReader.GetStream(0);
-            // byte[] DuckDbGeometryBytes = new byte[0];
-            byte[] DuckDbGeometryBytes = new byte[duckDbStream.Length];
-            duckDbStream.Read(DuckDbGeometryBytes, 0, DuckDbGeometryBytes.Length);
-
-            // duckDbStream.Seek(0, SeekOrigin.Begin);
-            // var geometry = wkbReader.Read(duckDbStream);
-            
+            byte[] duckDbGeometryBytes = new byte[duckDbStream.Length];
+            duckDbStream.Read(duckDbGeometryBytes, 0, duckDbGeometryBytes.Length);
             duckDbStream.Close();
             
-    
             Geometry? geom = null;
             try 
             {
-                geom = postGisReader.Read(DuckDbGeometryBytes);
+                geom = postGisReader.Read(duckDbGeometryBytes);
                 Console.WriteLine("Успешное чтение через PostGIS-формат");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Ошибка PostGIS формата: {ex.Message}");
             }
-            
-            Console.WriteLine($"SRID: {geom?.SRID}");
+
+            if (geom == null) continue;
+            geometries.Add(geom);
+
+            Console.WriteLine($"Тип геометрии: {geom.GeometryType}, Площадь: {geom.Area}");
         }
+        
+        var distance = geometries[0].Distance(geometries[1]);
+        Console.WriteLine($"Расстояние между первым и вторым элементами: {distance}");
+        
+        var crosses = geometries[0].Crosses(geometries[1]);
+        Console.WriteLine($"Пересекает ли: {(crosses? "Да" : "Нет")}");
     }
 }
